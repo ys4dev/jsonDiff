@@ -8,17 +8,15 @@ data class Diff(val state: DiffState, val value: JsonNode)
  *
  */
 sealed class DiffTree {
-    abstract val state: DiffState
-    abstract val left: JsonNode
-    abstract val right: JsonNode
+    abstract val left: Diff
+    abstract val right: Diff
 }
 
 data class DiffNode(
-        override val state: DiffState,
         val namedValues: List<Pair<String, DiffTree>>,
         val indexedValues: List<DiffTree>,
-        override val left: JsonNode,
-        override val right: JsonNode
+        override val left: Diff,
+        override val right: Diff
 ) : DiffTree() {
     fun keys(): List<String> = namedValues.map { it.first }
     fun type(): String {
@@ -33,9 +31,8 @@ data class DiffNode(
 }
 
 data class DiffValue(
-        override val state: DiffState,
-        override val left: JsonNode,
-        override val right: JsonNode
+        override val left: Diff,
+        override val right: Diff
 ) : DiffTree() {
 
 }

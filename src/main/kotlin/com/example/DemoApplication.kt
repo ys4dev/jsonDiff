@@ -27,6 +27,13 @@ class DemoApplication : Application() {
     }
 
     @Throws(Exception::class)
+    override fun stop() {
+        // LOG.debug("Stop JavaFX application");
+        super.stop()
+        applicationContext.close()
+    }
+
+    @Throws(Exception::class)
     override fun init() {
         // set Thread name
         Thread.currentThread().name = "main"

@@ -28,7 +28,8 @@ class DiffTest {
         val node1 = mapper.readTree(str1)
         val node2 = mapper.readTree(str1)
         val result = diff.diff(node1, node2)
-        assertEquals(DiffState.Same, result.state)
+        assertEquals(DiffState.Same, result.left.state)
+        assertEquals(DiffState.Same, result.right.state)
     }
 
     @Test
@@ -36,6 +37,7 @@ class DiffTest {
         val node1 = IntNode(1)
         val node2 = IntNode(2)
         val result = diff.diff(node1, node2)
-        assertEquals(DiffState.Different, result.state)
+        assertEquals(DiffState.Different, result.left.state)
+        assertEquals(DiffState.Different, result.right.state)
     }
 }
