@@ -15,11 +15,9 @@ import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
 import javafx.fxml.Initializable
-import javafx.scene.control.TextField
-import javafx.scene.control.TreeItem
-import javafx.scene.control.TreeTableColumn
-import javafx.scene.control.TreeTableView
+import javafx.scene.control.*
 import javafx.scene.control.cell.TreeItemPropertyValueFactory
+import javafx.util.Callback
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
 import java.net.URL
@@ -45,7 +43,7 @@ class MyAppController : Initializable {
     lateinit private var leftNameColumn: TreeTableColumn<NameValue, String>
 
     @FXML
-    lateinit private var leftValueColumn: TreeTableColumn<NameValue, String>
+    lateinit private var leftValueColumn: TreeTableColumn<NameValue, JsonNode>
 
     @FXML
     lateinit private var rightTree: TreeTableView<NameValue>
@@ -59,13 +57,16 @@ class MyAppController : Initializable {
     override fun initialize(location: URL, resources: ResourceBundle?) {
         leftNameColumn.cellValueFactory = TreeItemPropertyValueFactory("name")
         leftValueColumn.cellValueFactory = TreeItemPropertyValueFactory("value")
+        leftValueColumn.cellFactory = Callback { column ->
+            MyCell()
+        }
 
         rightNameColumn.cellValueFactory = TreeItemPropertyValueFactory("name")
         rightValueColumn.cellValueFactory = TreeItemPropertyValueFactory("value")
 
         val mapper = ObjectMapper().registerKotlinModule()
-        val json1 = mapper.readTree("""{"a":0, "b":"c", "parent":{"child":"child"}, "array":[1,"2",3.0,null,true]}""")
-        val json2 = mapper.readTree("""{"a":0}""")
+        val json1 = mapper.readTree("""{"a":0, "b":"c", "parent":{"child":"child"}, "array":[1,"2",3.0,null,true], "c":{"c1":"v1","c2":2}}""")
+        val json2 = mapper.readTree("""{"a":0, "c":{"c1":"v1","c2":2}, "d":{"e":3, "f":[], "g":{}}}""")
 
         val root = toSame(json1, json2)//diffService.diff(json1, json2)
         val leftRootItem = toTreeItem("", root, { it.left })
@@ -84,7 +85,7 @@ class MyAppController : Initializable {
                 } else {
                     diff.type()
                 }
-                val result = TreeItem(NameValue(diff.state, name, label))
+                val result: TreeItem<NameValue> = TreeItem(NodeValue(diff.state, name, node, label))
                 for ((k, v) in namedValues) {
                     result.children.add(toTreeItem(k, v, f))
                 }
@@ -93,29 +94,18 @@ class MyAppController : Initializable {
                 }
                 return result
             }
-//            is DiffArray -> {
-//                val result = TreeItem(NameValue(diff.state, name, "array"))
-//                diff.values.forEachIndexed { index, child ->
-//                    result.children.add(toTreeItem(index.toString(), child, f))
-//                }
-//                return result
-//            }
             is DiffValue -> {
-                return TreeItem(NameValue(DiffState.Same, name, f(diff).toString()))
+                return TreeItem(LeafValue(diff.state, name, f(diff)))
             }
         }
     }
 
-    data class NameValue(
-        val state: DiffState,
-        val name: String,
-        val value: String
-    )
 
     fun toSame(node1: JsonNode, node2: JsonNode): DiffResult {
         val indices = node1.indices() + node2.indices()
         if (indices.isEmpty()) {
-            return DiffValue(DiffState.Same, node1, node2)
+            val state = if (node1.toString() == node2.toString()) DiffState.Same else DiffState.Different
+            return DiffValue(state, node1, node2)
         }
 
         val nameds: MutableList<Pair<String, DiffResult>> = mutableListOf()
@@ -131,33 +121,15 @@ class MyAppController : Initializable {
             val value2 = node2[index] ?: MissingNode.getInstance()
             indexed.add(toSame(value1, value2))
         }
-        return DiffNode(DiffState.Same, nameds, indexed, node1, node2)
-
-//
-//        if (node1 is ObjectNode && node2 is ObjectNode) {
-//            val keys = linkedSetOf<String>()
-//            node1.fieldNames().forEach { keys.add(it) }
-//            node2.fieldNames().forEach { keys.add(it) }
-//
-//            val results: MutableList<Pair<String, DiffResult>> = mutableListOf()
-//            keys.forEach { key ->
-//                val value1 = node1[key] ?: MissingNode.getInstance()
-//                val value2 = node2[key] ?: MissingNode.getInstance()
-//                results.add(Pair(key, toSame(value1, value2)))
-//            }
-//            return DiffNode(DiffState.Same, results)
-//        } else if (node1 is ArrayNode && node2 is ArrayNode) {
-//            val children = mutableListOf<DiffResult>()
-//            val max = maxOf(node1.size(), node2.size())
-//            (0..max).forEach { index ->
-//                children.add(toSame(node1[index], node2[index]))
-//            }
-//            return DiffArray(DiffState.Same, children)
-//        } else if (node1 is ObjectNode) {
-//
-//        } else {
-//            return DiffValue(DiffState.Same, node1, node2)
-//        }
+        val state =
+        if (node1 is MissingNode || node2 is MissingNode) {
+            DiffState.Different
+        } else {
+            val containsDiff = (nameds.map { it.second } + indexed).any { it.state != DiffState.Same }
+            if (containsDiff) DiffState.ContainsDifferent
+            else DiffState.Same
+        }
+        return DiffNode(state, nameds, indexed, node1, node2)
     }
 
     @FXML
@@ -190,5 +162,64 @@ data class Indices(val stringKeys: Set<String>, val maxIndex: Int) {
 
     fun isEmpty(): Boolean {
         return stringKeys.isEmpty() && maxIndex == 0
+    }
+}
+
+
+sealed class NameValue {
+    abstract val state: DiffState
+    abstract val name: String
+    abstract val value: JsonNode
+}
+data class LeafValue(
+        override val state: DiffState,
+        override val name: String,
+        override val value: JsonNode
+) : NameValue()
+data class NodeValue(
+        override val state: DiffState,
+        override val name: String,
+        override val value: JsonNode,
+        val label: String
+) : NameValue()
+
+
+class MyCell: TreeTableCell<NameValue, JsonNode>() {
+    override fun updateItem(item: JsonNode?, empty: Boolean) {
+        super.updateItem(item, empty)
+
+        if (item == null) {
+            text = ""
+            style = ""
+        } else {
+            var treeItem = treeTableView.getTreeItem(index)
+            val data = treeItem?.value
+            val newStyle =
+                    if (data?.value?.isMissingNode ?: false) {
+                        "-fx-background-color: lightgray;"
+                    } else {
+                        when (data?.state) {
+                            DiffState.Same -> {
+                                ""
+                            }
+                            DiffState.Different -> {
+                                "-fx-background-color: orange;"
+                            }
+                            DiffState.ContainsDifferent -> {
+                                "-fx-background-color: yellow;"
+                            }
+                            else -> {
+                                ""
+                            }
+                        }
+                    }
+            style = newStyle
+
+            text = when (data) {
+                is NodeValue -> data.label
+                is LeafValue -> data.value.toString()
+                else -> ""
+            }
+        }
     }
 }
