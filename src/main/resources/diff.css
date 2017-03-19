@@ -1,0 +1,7 @@
+/* Selected row when table not focused */
+.tree-table-row-cell:filled:focused:selected {
+    -fx-background-color: lightskyblue;
+    -fx-background-insets: 0, 1, 2;
+    -fx-background: -fx-accent;
+    -fx-text-fill: -fx-selection-bar-text;
+}

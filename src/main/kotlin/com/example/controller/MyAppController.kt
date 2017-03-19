@@ -15,8 +15,13 @@ import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
 import javafx.fxml.Initializable
+import javafx.geometry.Insets
 import javafx.scene.control.*
 import javafx.scene.control.cell.TreeItemPropertyValueFactory
+import javafx.scene.layout.Background
+import javafx.scene.layout.BackgroundFill
+import javafx.scene.paint.Color
+import javafx.scene.shape.Rectangle
 import javafx.util.Callback
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
@@ -52,17 +57,20 @@ class MyAppController : Initializable {
     lateinit private var rightNameColumn: TreeTableColumn<NameValue, String>
 
     @FXML
-    lateinit private var rightValueColumn: TreeTableColumn<NameValue, String>
+    lateinit private var rightValueColumn: TreeTableColumn<NameValue, JsonNode>
 
     override fun initialize(location: URL, resources: ResourceBundle?) {
         leftNameColumn.cellValueFactory = TreeItemPropertyValueFactory("name")
+        leftNameColumn.cellFactory = Callback { HeadCell() }
         leftValueColumn.cellValueFactory = TreeItemPropertyValueFactory("value")
-        leftValueColumn.cellFactory = Callback { column ->
-            MyCell()
-        }
+        leftValueColumn.cellFactory = Callback { MyCell() }
+        leftTree.rowFactory = Callback { MyRow() }
 
         rightNameColumn.cellValueFactory = TreeItemPropertyValueFactory("name")
+        rightNameColumn.cellFactory = Callback { HeadCell() }
         rightValueColumn.cellValueFactory = TreeItemPropertyValueFactory("value")
+        rightValueColumn.cellFactory = Callback { MyCell() }
+        rightTree.rowFactory = Callback { MyRow() }
 
         val mapper = ObjectMapper().registerKotlinModule()
         val json1 = mapper.readTree("""{"a":0, "b":"c", "parent":{"child":"child"}, "array":[1,"2",3.0,null,true], "c":{"c1":"v1","c2":2}}""")
@@ -75,7 +83,8 @@ class MyAppController : Initializable {
         rightTree.root = rightRootItem
     }
 
-    fun toTreeItem(name: String = "", diff: DiffResult, f: (DiffTree) -> JsonNode): TreeItem<NameValue> {
+    fun toTreeItem(name: String = "", diff: DiffResult, f: (DiffTree) -> JsonNode, statusList: List<DiffState> = listOf()): TreeItem<NameValue> {
+        val stack = statusList + diff.state
         when (diff) {
             is DiffNode -> {
                 val (_, namedValues, indexedValues) = diff
@@ -85,17 +94,17 @@ class MyAppController : Initializable {
                 } else {
                     diff.type()
                 }
-                val result: TreeItem<NameValue> = TreeItem(NodeValue(diff.state, name, node, label))
+                val result: TreeItem<NameValue> = TreeItem(NodeValue(diff.state, name, node, label, stack))
                 for ((k, v) in namedValues) {
-                    result.children.add(toTreeItem(k, v, f))
+                    result.children.add(toTreeItem(k, v, f, stack))
                 }
                 indexedValues.forEachIndexed { index, child ->
-                    result.children.add(toTreeItem(index.toString(), child, f))
+                    result.children.add(toTreeItem(index.toString(), child, f, stack))
                 }
                 return result
             }
             is DiffValue -> {
-                return TreeItem(LeafValue(diff.state, name, f(diff)))
+                return TreeItem(LeafValue(diff.state, name, f(diff), stack))
             }
         }
     }
@@ -170,56 +179,127 @@ sealed class NameValue {
     abstract val state: DiffState
     abstract val name: String
     abstract val value: JsonNode
+    abstract val statusList: List<DiffState>
 }
 data class LeafValue(
         override val state: DiffState,
         override val name: String,
-        override val value: JsonNode
+        override val value: JsonNode,
+        override val statusList: List<DiffState>
 ) : NameValue()
 data class NodeValue(
         override val state: DiffState,
         override val name: String,
         override val value: JsonNode,
-        val label: String
+        val label: String,
+        override val statusList: List<DiffState>
 ) : NameValue()
 
 
 class MyCell: TreeTableCell<NameValue, JsonNode>() {
+
+    fun buildText(row: NameValue, value: JsonNode): String {
+        return when (row) {
+            is NodeValue -> row.label
+            is LeafValue -> row.value.toString()
+            else -> ""
+        }
+    }
+
     override fun updateItem(item: JsonNode?, empty: Boolean) {
         super.updateItem(item, empty)
 
-        if (item == null) {
+        val treeItem = treeTableView.getTreeItem(index)
+        val data = treeItem?.value
+        if (item == null || data == null) {
             text = ""
-            style = ""
         } else {
-            var treeItem = treeTableView.getTreeItem(index)
-            val data = treeItem?.value
-            val newStyle =
-                    if (data?.value?.isMissingNode ?: false) {
-                        "-fx-background-color: lightgray;"
-                    } else {
-                        when (data?.state) {
-                            DiffState.Same -> {
-                                ""
-                            }
-                            DiffState.Different -> {
-                                "-fx-background-color: orange;"
-                            }
-                            DiffState.ContainsDifferent -> {
-                                "-fx-background-color: yellow;"
-                            }
-                            else -> {
-                                ""
-                            }
+            text = buildText(data, item)
+        }
+    }
+}
+
+class MyRow: TreeTableRow<NameValue>() {
+
+    fun buildStyle(row: NameValue): String {
+        val style =
+                if (row.value.isMissingNode) {
+                    "-fx-background-color: lightgray;"
+                } else {
+                    when (row.state) {
+                        DiffState.Same -> {
+                            ""
+                        }
+                        DiffState.Different -> {
+                            "-fx-background-color: orange;"
+                        }
+                        DiffState.ContainsDifferent -> {
+                            "-fx-background-color: yellow;"
+                        }
+                        else -> {
+                            ""
                         }
                     }
-            style = newStyle
+                }
+        return style
+    }
 
-            text = when (data) {
-                is NodeValue -> data.label
-                is LeafValue -> data.value.toString()
-                else -> ""
-            }
+    override fun updateItem(item: NameValue?, empty: Boolean) {
+        super.updateItem(item, empty)
+
+        val treeItem = treeTableView.getTreeItem(index)
+        val data = treeItem?.value
+        val selected = treeTableView.selectionModel.selectedIndex == index
+
+        if (item == null || data == null || selected) {
+            style = ""
+        } else {
+            style = buildStyle(data)
         }
+    }
+
+    override fun updateSelected(selected: Boolean) {
+        super.updateSelected(selected)
+
+        val treeItem = treeTableView.getTreeItem(index)
+        val data = treeItem?.value
+
+        if (data == null || selected) {
+            style = ""
+        } else {
+            style = buildStyle(data)
+        }
+    }
+}
+
+class HeadCell : TreeTableCell<NameValue, String>() {
+
+    override fun updateItem(item: String?, empty: Boolean) {
+        super.updateItem(item, empty)
+
+        text = item ?: ""
+
+        val treeItem = treeTableView.getTreeItem(index)
+        val data = treeItem?.value
+        val selected = treeTableView.selectionModel.selectedIndex == index
+
+        if (data?.statusList == null) {
+            background = Background.EMPTY
+            return
+        }
+
+        val w = tableColumn.width
+        val fills: List<BackgroundFill> = data.statusList.mapIndexed { index, diffState -> BackgroundFill(diffState.color(), null, Insets(0.0, w - 20 * (index + 1), 0.0, 20.0 * index)) }
+
+        background = Background(*fills.toTypedArray())
+    }
+}
+
+fun DiffState.color(): Color {
+    return when (this) {
+        DiffState.Same -> Color.TRANSPARENT
+        DiffState.Different -> Color.ORANGE
+        DiffState.ContainsDifferent -> Color.YELLOW
+        DiffState.Missing -> Color.LIGHTGRAY
     }
 }

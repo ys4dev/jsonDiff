@@ -22,6 +22,7 @@ class DemoApplication : Application() {
         val loader = applicationContext.getBean(MySpringFXMLLoader::class.java)
         primaryStage!!.title = "Hello World!"
         primaryStage.scene = Scene(loader.load(javaClass.getResource("/myapp.fxml")))
+        primaryStage.scene.stylesheets.add("/diff.css")
         primaryStage.show()
     }
 

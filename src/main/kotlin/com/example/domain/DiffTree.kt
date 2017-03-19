@@ -2,6 +2,8 @@ package com.example.domain
 
 import com.fasterxml.jackson.databind.JsonNode
 
+data class Diff(val state: DiffState, val value: JsonNode)
+
 /**
  *
  */
@@ -41,5 +43,6 @@ data class DiffValue(
 enum class DiffState {
     Same,
     Different,
-    ContainsDifferent
+    ContainsDifferent,
+    Missing
 }
