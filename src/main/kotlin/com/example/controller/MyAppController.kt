@@ -1,25 +1,32 @@
 package com.example.controller
 
+import com.example.MySpringFXMLLoader
 import com.example.domain.*
 import com.example.server.service.DiffResult
 import com.example.server.service.DiffService
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.MissingNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import javafx.event.ActionEvent
+import javafx.event.EventHandler
 import javafx.fxml.FXML
 import javafx.fxml.Initializable
 import javafx.geometry.Insets
+import javafx.scene.Scene
 import javafx.scene.control.*
 import javafx.scene.control.cell.TreeItemPropertyValueFactory
 import javafx.scene.layout.Background
 import javafx.scene.layout.BackgroundFill
+import javafx.scene.layout.Pane
 import javafx.scene.paint.Color
+import javafx.stage.Stage
 import javafx.util.Callback
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.context.ConfigurableApplicationContext
 import org.springframework.stereotype.Component
 import java.net.URL
 import java.util.*
@@ -33,6 +40,9 @@ class MyAppController : Initializable {
 
     @Autowired
     lateinit private var diffService: DiffService
+
+    @Autowired
+    lateinit var applicationContext: ConfigurableApplicationContext
 
     @FXML
     lateinit private var text: TextField
@@ -55,6 +65,15 @@ class MyAppController : Initializable {
     @FXML
     lateinit private var rightValueColumn: TreeTableColumn<NameValue, JsonNode>
 
+    lateinit private var inputController: InputController
+
+    lateinit private var json1: JsonNode
+    lateinit private var json2: JsonNode
+
+    lateinit private var diffRoot: DiffResult
+    lateinit private var leftRootItem: TreeItem<NameValue>
+    lateinit private var rightRootItem: TreeItem<NameValue>
+
     override fun initialize(location: URL, resources: ResourceBundle?) {
         leftNameColumn.cellValueFactory = TreeItemPropertyValueFactory("name")
         leftNameColumn.cellFactory = Callback { HeadCell() }
@@ -69,25 +88,17 @@ class MyAppController : Initializable {
         rightTree.rowFactory = Callback { MyRow() }
 
         val mapper = ObjectMapper().registerKotlinModule()
-        val json1 = mapper.readTree("""{"a":0, "b":"c", "parent":{"child":"child"}, "array":[1,"2",3.0,null,true], "c":{"c1":"v1","c2":2}, "h":"node1","i":"あ"}""")
-        val json2 = mapper.readTree("""{"a":0, "c":{"c1":"v1","c2":2}, "d":{"e":3, "f":[], "g":{}}, "h":"node2"}""")
+        json1 = mapper.readTree("""{"a":0, "b":"c", "parent":{"child":"child"}, "array":[1,"2",3.0,null,true], "c":{"c1":"v1","c2":2}, "h":"node1","i":"あ"}""")
+        json2 = mapper.readTree("""{"a":0, "c":{"c1":"v1","c2":2}, "d":{"e":3, "f":[], "g":{}}, "h":"node2"}""")
 
-        val root = diff(json1, json2)//diffService.diff(json1, json2)
-        val leftRootItem = toTreeItem("", root, { it.left })
-        val rightRootItem = toTreeItem("", root, { it.right })
-        leftTree.root = leftRootItem
-        leftTree.root.isExpanded = true
-        rightTree.root = rightRootItem
-        rightTree.root.isExpanded = true
-
-        leftTree.root.zipWith(rightTree.root, {a, b -> link(a, b)})
+        updateJson()
 
         text.textProperty().addListener { observableValue, oldValue, newValue ->
             if (newValue.isBlank()) {
                 leftTree.root = leftRootItem
                 rightTree.root = rightRootItem
             } else {
-                val filtered = root.filter {
+                val filtered = diffRoot.filter {
                     it.name.contains(newValue) ||
                     it.left.value.isValueNode && it.left.value.toString().contains(newValue) ||
                     it.right.value.isValueNode && it.right.value.toString().contains(newValue)
@@ -107,6 +118,18 @@ class MyAppController : Initializable {
             leftTree.root?.isExpanded = true
             rightTree.root?.isExpanded = true
         }
+    }
+
+    private fun updateJson() {
+        diffRoot = diff(json1, json2)
+        leftRootItem = toTreeItem("", diffRoot, { it.left })
+        rightRootItem = toTreeItem("", diffRoot, { it.right })
+        leftRootItem.zipWith(rightRootItem, { a, b -> link(a, b) })
+
+        leftTree.root = leftRootItem
+        rightTree.root = rightRootItem
+        leftTree.root.isExpanded = true
+        rightTree.root.isExpanded = true
     }
 
     fun toTreeItem(name: String = "", diff: DiffResult, f: (DiffTree) -> Diff, statusList: List<DiffState> = listOf()): TreeItem<NameValue> {
@@ -188,7 +211,28 @@ class MyAppController : Initializable {
 
     @FXML
     private fun send(event: ActionEvent) {
-        println(event)
+        val stage = Stage()
+        val loader = applicationContext.getBean(MySpringFXMLLoader::class.java)
+        stage.title = "Input"
+        val (scene, controller) = loader.load<Pane, InputController>(javaClass.getResource("/input.fxml"))
+        stage.scene = Scene(scene)
+        inputController = controller
+
+        inputController.button().onMouseClicked = EventHandler { _ ->
+            val mapper = ObjectMapper().registerKotlinModule()
+            val tree1 = mapper.readTree(inputController.text1)
+            val tree2 = mapper.readTree(inputController.text2)
+            json1 = tree1
+            json2 = tree2
+            updateJson()
+            stage.close()
+        }
+
+        val mapper = ObjectMapper().registerKotlinModule().enable(SerializationFeature.INDENT_OUTPUT)
+        inputController.text1 = mapper.writeValueAsString(json1)
+        inputController.text2 = mapper.writeValueAsString(json2)
+
+        stage.show()
     }
 }
 
@@ -326,7 +370,7 @@ class HeadCell : TreeTableCell<NameValue, String>() {
 
         val treeItem = treeTableView.getTreeItem(index)
         val data = treeItem?.value
-        val selected = treeTableView.selectionModel.selectedIndex == index
+//        val selected = treeTableView.selectionModel.selectedIndex == index
 
         if (data?.statusList == null) {
             background = Background.EMPTY

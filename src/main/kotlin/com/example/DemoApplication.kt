@@ -1,7 +1,9 @@
 package com.example
 
+import com.example.controller.MyAppController
 import javafx.application.Application
 import javafx.scene.Scene
+import javafx.scene.layout.Pane
 import javafx.stage.Stage
 import org.springframework.boot.SpringApplication
 import org.springframework.boot.autoconfigure.SpringBootApplication
@@ -20,8 +22,9 @@ class DemoApplication : Application() {
         Thread.currentThread().name = "main-ui"
 
         val loader = applicationContext.getBean(MySpringFXMLLoader::class.java)
-        primaryStage!!.title = "Hello World!"
-        primaryStage.scene = Scene(loader.load(javaClass.getResource("/myapp.fxml")))
+        primaryStage!!.title = "Json diff"
+        val (pane, _) = loader.load<Pane, MyAppController>(javaClass.getResource("/myapp.fxml"))
+        primaryStage.scene = Scene(pane)
         primaryStage.scene.stylesheets.add("/diff.css")
         primaryStage.show()
     }
