@@ -11,6 +11,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.MissingNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
+import javafx.application.Platform
 import javafx.event.ActionEvent
 import javafx.event.EventHandler
 import javafx.fxml.FXML
@@ -132,7 +133,7 @@ class MyAppController : Initializable {
         rightTree.root.isExpanded = true
     }
 
-    fun toTreeItem(name: String = "", diff: DiffResult, f: (DiffTree) -> Diff, statusList: List<DiffState> = listOf()): TreeItem<NameValue> {
+    private fun toTreeItem(name: String = "", diff: DiffResult, f: (DiffTree) -> Diff, statusList: List<DiffState> = listOf()): TreeItem<NameValue> {
         val stack = statusList + f(diff).state
         when (diff) {
             is DiffNode -> {
@@ -162,7 +163,7 @@ class MyAppController : Initializable {
         }
     }
 
-    fun diff(node1: JsonNode, node2: JsonNode, name: String = ""): DiffResult {
+    private fun diff(node1: JsonNode, node2: JsonNode, name: String = ""): DiffResult {
         val indices = node1.indices() + node2.indices()
         if (indices.isEmpty()) {
             val (state1, state2) = when {
@@ -233,6 +234,17 @@ class MyAppController : Initializable {
         inputController.text2 = mapper.writeValueAsString(json2)
 
         stage.show()
+    }
+
+    fun diff(json1: String, json2: String) {
+        val mapper = ObjectMapper().registerKotlinModule()
+        var tree1 = mapper.readTree(json1)
+        val tree2 = mapper.readTree(json2)
+        Platform.runLater {
+            this.json1 = tree1
+            this.json2 = tree2
+            updateJson()
+        }
     }
 }
 

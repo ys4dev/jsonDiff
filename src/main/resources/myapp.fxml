@@ -13,8 +13,8 @@
    <children>
       <HBox prefHeight="14.0" prefWidth="600.0">
          <children>
-            <TextField fx:id="text" prefHeight="27.0" prefWidth="285.0" HBox.hgrow="ALWAYS" />
-            <Button mnemonicParsing="false" onAction="#send" prefHeight="27.0" prefWidth="84.0" text="Send" />
+            <TextField fx:id="text" prefHeight="27.0" prefWidth="285.0" promptText="Search (name or value)" HBox.hgrow="ALWAYS" />
+            <Button mnemonicParsing="false" onAction="#send" prefHeight="27.0" prefWidth="84.0" text="Input" />
          </children>
       </HBox>
       <HBox prefHeight="100.0" prefWidth="200.0" VBox.vgrow="ALWAYS">
