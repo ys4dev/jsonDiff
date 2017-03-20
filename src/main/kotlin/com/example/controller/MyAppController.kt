@@ -2,13 +2,11 @@ package com.example.controller
 
 import com.example.MySpringFXMLLoader
 import com.example.domain.*
-import com.example.server.service.DiffResult
 import com.example.server.service.DiffService
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.SerializationFeature
 import com.fasterxml.jackson.databind.node.ArrayNode
-import com.fasterxml.jackson.databind.node.MissingNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
 import javafx.application.Platform
@@ -71,7 +69,7 @@ class MyAppController : Initializable {
     lateinit private var json1: JsonNode
     lateinit private var json2: JsonNode
 
-    lateinit private var diffRoot: DiffResult
+    lateinit private var diffRoot: DiffTree
     lateinit private var leftRootItem: TreeItem<NameValue>
     lateinit private var rightRootItem: TreeItem<NameValue>
 
@@ -89,8 +87,10 @@ class MyAppController : Initializable {
         rightTree.rowFactory = Callback { MyRow() }
 
         val mapper = ObjectMapper().registerKotlinModule()
-        json1 = mapper.readTree("""{"a":0, "b":"c", "parent":{"child":"child"}, "array":[1,"2",3.0,null,true], "c":{"c1":"v1","c2":2}, "h":"node1","i":"あ"}""")
-        json2 = mapper.readTree("""{"a":0, "c":{"c1":"v1","c2":2}, "d":{"e":3, "f":[], "g":{}}, "h":"node2"}""")
+        json1 = mapper.readTree("{}")
+        json2 = mapper.readTree("{}")
+//        json1 = mapper.readTree("""{"a":0, "b":"c", "parent":{"child":"child"}, "array":[1,"2",3.0,null,true], "c":{"c1":"v1","c2":2}, "h":"node1","i":"あ"}""")
+//        json2 = mapper.readTree("""{"a":0, "c":{"c1":"v1","c2":2}, "d":{"e":3, "f":[], "g":{}}, "h":"node2"}""")
 
         updateJson()
 
@@ -122,7 +122,7 @@ class MyAppController : Initializable {
     }
 
     private fun updateJson() {
-        diffRoot = diff(json1, json2)
+        diffRoot = diffService.diff(json1, json2)
         leftRootItem = toTreeItem("", diffRoot, { it.left })
         rightRootItem = toTreeItem("", diffRoot, { it.right })
         leftRootItem.zipWith(rightRootItem, { a, b -> link(a, b) })
@@ -133,7 +133,7 @@ class MyAppController : Initializable {
         rightTree.root.isExpanded = true
     }
 
-    private fun toTreeItem(name: String = "", diff: DiffResult, f: (DiffTree) -> Diff, statusList: List<DiffState> = listOf()): TreeItem<NameValue> {
+    private fun toTreeItem(name: String = "", diff: DiffTree, f: (DiffTree) -> Diff, statusList: List<DiffState> = listOf()): TreeItem<NameValue> {
         val stack = statusList + f(diff).state
         when (diff) {
             is DiffNode -> {
@@ -161,44 +161,6 @@ class MyAppController : Initializable {
                 }
             }
         }
-    }
-
-    private fun diff(node1: JsonNode, node2: JsonNode, name: String = ""): DiffResult {
-        val indices = node1.indices() + node2.indices()
-        if (indices.isEmpty()) {
-            val (state1, state2) = when {
-                node1.toString() == node2.toString() -> Pair(DiffState.Same, DiffState.Same)
-                node1 is MissingNode -> Pair(DiffState.Missing, DiffState.Different)
-                node2 is MissingNode -> Pair(DiffState.Different, DiffState.Missing)
-                else -> Pair(DiffState.Different, DiffState.Different)
-            }
-            return DiffValue(Diff(state1, node1), Diff(state2, node2), name)
-        }
-
-        val nameds: MutableList<Pair<String, DiffResult>> = mutableListOf()
-        indices.stringKeys.forEach { key ->
-            val value1 = node1[key] ?: MissingNode.getInstance()
-            val value2 = node2[key] ?: MissingNode.getInstance()
-            nameds.add(Pair(key, diff(value1, value2, key)))
-        }
-
-        val indexed = mutableListOf<DiffResult>()
-        indices.intKeys.forEach { index ->
-            val value1 = node1[index] ?: MissingNode.getInstance()
-            val value2 = node2[index] ?: MissingNode.getInstance()
-            indexed.add(diff(value1, value2, index.toString()))
-        }
-        val (statel, stater) =
-        if (node1 is MissingNode) {
-            Pair(DiffState.Missing, DiffState.Different)
-        } else if (node2 is MissingNode) {
-            Pair(DiffState.Different, DiffState.Missing)
-        } else {
-            val containsDiff = (nameds.flatMap { listOf(it.second.left, it.second.right) } + indexed.flatMap { listOf(it.left, it.right) }).any { it.state != DiffState.Same }
-            if (containsDiff) Pair(DiffState.ContainsDifferent, DiffState.ContainsDifferent)
-            else Pair(DiffState.Same, DiffState.Same)
-        }
-        return DiffNode(nameds, indexed, Diff(statel, node1), Diff(stater, node2), name)
     }
 
     private fun <T> link(a: TreeItem<T>, b: TreeItem<T>): Unit {
@@ -238,7 +200,7 @@ class MyAppController : Initializable {
 
     fun diff(json1: String, json2: String) {
         val mapper = ObjectMapper().registerKotlinModule()
-        var tree1 = mapper.readTree(json1)
+        val tree1 = mapper.readTree(json1)
         val tree2 = mapper.readTree(json2)
         Platform.runLater {
             this.json1 = tree1
@@ -402,18 +364,6 @@ fun DiffState.color(): Color {
         DiffState.Different -> Color.ORANGE
         DiffState.ContainsDifferent -> Color.YELLOW
         DiffState.Missing -> Color.LIGHTGRAY
-    }
-}
-
-
-fun <T> filter(parent: TreeItem<T>, filteredParent: TreeItem<T>,p: (TreeItem<T>) -> Boolean): Unit {
-    parent.children.forEach { c ->
-        val newNode = TreeItem<T>(c.value)
-        newNode.isExpanded = true
-        filter(c, newNode, p)
-        if (newNode.children.isNotEmpty() || p(newNode)) run {
-            filteredParent.children.add(newNode)
-        }
     }
 }
 

@@ -23,7 +23,6 @@ data class DiffNode(
         override val right: Diff,
         override val name: String
 ) : DiffTree() {
-//    fun keys(): List<String> = namedValues.map { it.first }
     override val type: String
         get() {
         if (namedValues.isNotEmpty() && indexedValues.isEmpty()) {
@@ -36,18 +35,18 @@ data class DiffNode(
     }
 
     override fun filter(p: (DiffTree) -> Boolean): DiffTree? {
-        val namedFilterd = namedValues.map { (k, v) ->
+        val namedFiltered = namedValues.map { (k, v) ->
             Pair(k, v.filter(p))
         }.filterMap({ (k, v) -> v != null }, { (k, v) -> Pair(k, v!!) })
         val indexedFiltered = indexedValues.map{ it.filter(p) }.nonnull()
-        if (namedFilterd.isEmpty() && indexedFiltered.isEmpty()) {
+        if (namedFiltered.isEmpty() && indexedFiltered.isEmpty()) {
             if (! p(this)) {
                 return null
             } else {
                 return DiffValue(left, right, this.name, this.type)
             }
         } else {
-            return DiffNode(namedFilterd, indexedFiltered, left, right, this.name)
+            return DiffNode(namedFiltered, indexedFiltered, left, right, this.name)
         }
     }
 }
@@ -65,22 +64,6 @@ data class DiffValue(
             return null
         }
     }
-}
-
-//object DiffNone : DiffTree() {
-//    override val left: Diff
-//        get() = TODO()
-//
-//    override val right: Diff
-//        get() = TODO()
-//
-//    override fun filter(p: (DiffTree) -> Boolean): DiffTree {
-//        return DiffNone
-//    }
-//}
-
-fun <T, U> T.revapply(f: (T) -> U): U {
-    return f(this)
 }
 
 fun <T> List<T?>.nonnull(): List<T> {

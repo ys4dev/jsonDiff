@@ -1,87 +1,57 @@
 package com.example.server.service
 
-import com.example.domain.DiffTree
+import com.example.controller.indices
+import com.example.domain.*
 import com.fasterxml.jackson.databind.JsonNode
-import com.fasterxml.jackson.databind.node.ArrayNode
-import com.fasterxml.jackson.databind.node.JsonNodeType
-import com.fasterxml.jackson.databind.node.ObjectNode
+import com.fasterxml.jackson.databind.node.MissingNode
 import org.springframework.stereotype.Service
-
-typealias DiffResult = DiffTree
 
 /**
  *
  */
 interface DiffService {
 
-    fun diff(node1: JsonNode, node2: JsonNode): DiffResult
+    fun diff(node1: JsonNode, node2: JsonNode, name: String = ""): DiffTree
 }
 
 @Service
 class DiffServiceImpl : DiffService {
 
-    override fun diff(node1: JsonNode, node2: JsonNode): DiffResult {
-        if (node1 is ObjectNode && node2 is ObjectNode) {
-            return diff(node1, node2)
-        } else if (node1 is ArrayNode && node2 is ArrayNode) {
-
-        } else if (node1.nodeType == node2.nodeType) {
-
-        } else {
-
-        }
-        TODO()
-    }
-
-    fun diff(node1: ObjectNode, node2: ObjectNode): DiffResult {
-        val keys: List<String> = fromIterator(node1.fieldNames()) + fromIterator(node1.fieldNames())
-        val results = keys.map { key ->
-            val value1 = node1[key]
-            val value2 = node2[key]
-
-            if (value1.nodeType != value2.nodeType) {
-                Pair(key, typemismatch(value1, value2))
-            } else if (isContainer(value1)) {
-//                Pair(key, )
-            } else if (equalsValue(value1, value2)) {
-                Pair(key, equalValue(value1))
-            } else {
-//                Pair()
+    override fun diff(node1: JsonNode, node2: JsonNode, name: String): DiffTree {
+        val indices = node1.indices() + node2.indices()
+        if (indices.isEmpty()) {
+            val (state1, state2) = when {
+                node1.toString() == node2.toString() -> Pair(DiffState.Same, DiffState.Same)
+                node1 is MissingNode -> Pair(DiffState.Missing, DiffState.Different)
+                node2 is MissingNode -> Pair(DiffState.Different, DiffState.Missing)
+                else -> Pair(DiffState.Different, DiffState.Different)
             }
+            return DiffValue(Diff(state1, node1), Diff(state2, node2), name)
         }
-        TODO()
-    }
 
-    private fun equalValue(value: JsonNode): DiffResult {
-        TODO()
-    }
-
-    private fun isContainer(node1: JsonNode): Boolean {
-        return node1.nodeType == JsonNodeType.ARRAY || node1.nodeType == JsonNodeType.OBJECT
-    }
-
-    private fun equalsValue(value1: JsonNode, value2: JsonNode): Boolean {
-        val nodeType1 = value1.nodeType
-        val nodeType2 = value2.nodeType
-        assert(nodeType1 == nodeType2)
-        when (Pair(nodeType1, nodeType2)) {
-            Pair(JsonNodeType.BOOLEAN, JsonNodeType.BOOLEAN) ->
-                return value1.booleanValue() == value2.booleanValue()
-            Pair(JsonNodeType.NUMBER, JsonNodeType.NUMBER) ->
-                return value1.doubleValue() == value2.doubleValue()
+        val nameds: MutableList<Pair<String, DiffTree>> = mutableListOf()
+        indices.stringKeys.forEach { key ->
+            val value1 = node1[key] ?: MissingNode.getInstance()
+            val value2 = node2[key] ?: MissingNode.getInstance()
+            nameds.add(Pair(key, diff(value1, value2, key)))
         }
-        return false
-    }
 
-    fun typemismatch(node1: JsonNode, node2: JsonNode): DiffResult {
-        TODO()
-    }
-
-    fun <T> fromIterator(iterator: Iterator<T>): List<T> {
-        val result = listOf<T>()
-        iterator.forEach {
-            result + it
+        val indexed = mutableListOf<DiffTree>()
+        indices.intKeys.forEach { index ->
+            val value1 = node1[index] ?: MissingNode.getInstance()
+            val value2 = node2[index] ?: MissingNode.getInstance()
+            indexed.add(diff(value1, value2, index.toString()))
         }
-        return result
+        val (statel, stater) =
+                if (node1 is MissingNode) {
+                    Pair(DiffState.Missing, DiffState.Different)
+                } else if (node2 is MissingNode) {
+                    Pair(DiffState.Different, DiffState.Missing)
+                } else {
+                    val containsDiff = (nameds.flatMap { listOf(it.second.left, it.second.right) } + indexed.flatMap { listOf(it.left, it.right) }).any { it.state != DiffState.Same }
+                    if (containsDiff) Pair(DiffState.ContainsDifferent, DiffState.ContainsDifferent)
+                    else Pair(DiffState.Same, DiffState.Same)
+                }
+        return DiffNode(nameds, indexed, Diff(statel, node1), Diff(stater, node2), name)
     }
 }
