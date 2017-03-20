@@ -40,5 +40,8 @@ dependencies {
 //	compileOnly('org.projectlombok:lombok')
 //	compile 'com.beust:klaxon:0.31'
 	compile "com.fasterxml.jackson.module:jackson-module-kotlin:2.8.7"
+	// https://mvnrepository.com/artifact/com.jfoenix/jfoenix
+	compile group: 'com.jfoenix', name: 'jfoenix', version: '1.2.0'
+
 	testCompile('org.springframework.boot:spring-boot-starter-test')
 }

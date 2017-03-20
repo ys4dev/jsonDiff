@@ -69,14 +69,44 @@ class MyAppController : Initializable {
         rightTree.rowFactory = Callback { MyRow() }
 
         val mapper = ObjectMapper().registerKotlinModule()
-        val json1 = mapper.readTree("""{"a":0, "b":"c", "parent":{"child":"child"}, "array":[1,"2",3.0,null,true], "c":{"c1":"v1","c2":2}, "h":"node1"}""")
+        val json1 = mapper.readTree("""{"a":0, "b":"c", "parent":{"child":"child"}, "array":[1,"2",3.0,null,true], "c":{"c1":"v1","c2":2}, "h":"node1","i":"あ"}""")
         val json2 = mapper.readTree("""{"a":0, "c":{"c1":"v1","c2":2}, "d":{"e":3, "f":[], "g":{}}, "h":"node2"}""")
 
-        val root = toSame(json1, json2)//diffService.diff(json1, json2)
+        val root = diff(json1, json2)//diffService.diff(json1, json2)
         val leftRootItem = toTreeItem("", root, { it.left })
         val rightRootItem = toTreeItem("", root, { it.right })
         leftTree.root = leftRootItem
+        leftTree.root.isExpanded = true
         rightTree.root = rightRootItem
+        rightTree.root.isExpanded = true
+
+        leftTree.root.zipWith(rightTree.root, {a, b -> link(a, b)})
+
+        text.textProperty().addListener { observableValue, oldValue, newValue ->
+            if (newValue.isBlank()) {
+                leftTree.root = leftRootItem
+                rightTree.root = rightRootItem
+            } else {
+                val filtered = root.filter {
+                    it.name.contains(newValue) ||
+                    it.left.value.isValueNode && it.left.value.toString().contains(newValue) ||
+                    it.right.value.isValueNode && it.right.value.toString().contains(newValue)
+                }
+
+                if (filtered != null) {
+                    leftTree.root = toTreeItem("", filtered, { it.left })
+                    rightTree.root = toTreeItem("", filtered, { it.right })
+                    leftTree.root.forEach { it.isExpanded = true }
+                    rightTree.root.forEach { it.isExpanded = true }
+                    leftTree.root.zipWith(rightTree.root, {a, b -> link(a, b)})
+                } else {
+                    leftTree.root = null
+                    rightTree.root = null
+                }
+            }
+            leftTree.root?.isExpanded = true
+            rightTree.root?.isExpanded = true
+        }
     }
 
     fun toTreeItem(name: String = "", diff: DiffResult, f: (DiffTree) -> Diff, statusList: List<DiffState> = listOf()): TreeItem<NameValue> {
@@ -88,7 +118,7 @@ class MyAppController : Initializable {
                 val label = if (node.isMissingNode) {
                     ""
                 } else {
-                    diff.type()
+                    diff.type
                 }
                 val result: TreeItem<NameValue> = TreeItem(NodeValue(f(diff).state, name, node, label, stack))
                 for ((k, v) in namedValues) {
@@ -100,13 +130,16 @@ class MyAppController : Initializable {
                 return result
             }
             is DiffValue -> {
-                return TreeItem(LeafValue(f(diff).state, name, f(diff).value, stack))
+                if (f(diff).value.isValueNode) {
+                    return TreeItem(LeafValue(f(diff).state, name, f(diff).value, stack))
+                } else {
+                    return TreeItem(NodeValue(f(diff).state, name, f(diff).value, diff.type, stack))
+                }
             }
         }
     }
 
-
-    fun toSame(node1: JsonNode, node2: JsonNode): DiffResult {
+    fun diff(node1: JsonNode, node2: JsonNode, name: String = ""): DiffResult {
         val indices = node1.indices() + node2.indices()
         if (indices.isEmpty()) {
             val (state1, state2) = when {
@@ -115,21 +148,21 @@ class MyAppController : Initializable {
                 node2 is MissingNode -> Pair(DiffState.Different, DiffState.Missing)
                 else -> Pair(DiffState.Different, DiffState.Different)
             }
-            return DiffValue(Diff(state1, node1), Diff(state2, node2))
+            return DiffValue(Diff(state1, node1), Diff(state2, node2), name)
         }
 
         val nameds: MutableList<Pair<String, DiffResult>> = mutableListOf()
         indices.stringKeys.forEach { key ->
             val value1 = node1[key] ?: MissingNode.getInstance()
             val value2 = node2[key] ?: MissingNode.getInstance()
-            nameds.add(Pair(key, toSame(value1, value2)))
+            nameds.add(Pair(key, diff(value1, value2, key)))
         }
 
         val indexed = mutableListOf<DiffResult>()
         indices.intKeys.forEach { index ->
             val value1 = node1[index] ?: MissingNode.getInstance()
             val value2 = node2[index] ?: MissingNode.getInstance()
-            indexed.add(toSame(value1, value2))
+            indexed.add(diff(value1, value2, index.toString()))
         }
         val (statel, stater) =
         if (node1 is MissingNode) {
@@ -141,7 +174,16 @@ class MyAppController : Initializable {
             if (containsDiff) Pair(DiffState.ContainsDifferent, DiffState.ContainsDifferent)
             else Pair(DiffState.Same, DiffState.Same)
         }
-        return DiffNode(nameds, indexed, Diff(statel, node1), Diff(stater, node2))
+        return DiffNode(nameds, indexed, Diff(statel, node1), Diff(stater, node2), name)
+    }
+
+    private fun <T> link(a: TreeItem<T>, b: TreeItem<T>): Unit {
+        a.expandedProperty().addListener { observable, oldValue, newValue ->
+            b.isExpanded = newValue
+        }
+        b.expandedProperty().addListener { o, oldValue, newValue ->
+            a.isExpanded = newValue
+        }
     }
 
     @FXML
@@ -305,4 +347,26 @@ fun DiffState.color(): Color {
         DiffState.ContainsDifferent -> Color.YELLOW
         DiffState.Missing -> Color.LIGHTGRAY
     }
+}
+
+
+fun <T> filter(parent: TreeItem<T>, filteredParent: TreeItem<T>,p: (TreeItem<T>) -> Boolean): Unit {
+    parent.children.forEach { c ->
+        val newNode = TreeItem<T>(c.value)
+        newNode.isExpanded = true
+        filter(c, newNode, p)
+        if (newNode.children.isNotEmpty() || p(newNode)) run {
+            filteredParent.children.add(newNode)
+        }
+    }
+}
+
+fun <T> TreeItem<T>.forEach(f: (TreeItem<T>) -> Unit): Unit {
+    f(this)
+    this.children.forEach(f)
+}
+
+fun <T> TreeItem<T>.zipWith(other: TreeItem<T>, f: (TreeItem<T>, TreeItem<T>) -> Unit): Unit {
+    f(this, other)
+    children.zip(other.children).forEach { (a, b) -> a.zipWith(b, f) }
 }
